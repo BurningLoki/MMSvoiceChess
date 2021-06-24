@@ -5,6 +5,8 @@
  * Copyright (c) 2020 Zhang Zeyu
  */
 //var mqtt = require('mqtt')
+var mttqTopic = "VoiceChess"
+
 var STACK_SIZE = 100;                 // maximum size of undo stack
 
 var board = null
@@ -374,12 +376,15 @@ function makeBestMove(color) {
     if (color === 'b')
     {
         var move = getBestMove(game, color, globalSum)[0];
+        
     }
     else
     {
         var move = getBestMove(game, color, -globalSum)[0];
     }
-
+    var p = color == 'b' ? "Black":"White";
+    var movement = move.from +" to " + move.to;
+    appendToLog(movement,p);
     globalSum = evaluateBoard(move, globalSum, 'b');
     updateAdvantage();
     
@@ -416,6 +421,7 @@ function makeBestMove(color) {
     }
 
 }
+
 
 /* 
  * Plays Computer vs. Computer, starting with a given color.
@@ -545,10 +551,23 @@ $('#redoBtn').on('click', function() {
     }
 })
 
-$('#showHint').change(function() {
+$('#showHint').click(function() {
     window.setTimeout(showHint, 250);
 })
 
+function VCshowHint() 
+{
+    var showHint = document.getElementById("showHint");
+    $board.find('.' + squareClass).removeClass('highlight-hint');
+
+    // Show hint (best move for white)
+    
+        var move = getBestMove(game, 'w', -globalSum)[0];
+
+        $board.find('.square-' + move.from).addClass('highlight-hint');
+        $board.find('.square-' + move.to).addClass('highlight-hint');
+
+}
 function showHint() 
 {
     var showHint = document.getElementById("showHint");
@@ -669,6 +688,53 @@ function setMTTQmsg(msg){
     var client = mqtt.connect('wxs://test.mosquitto.org')
 }
 
+function evalCommand(command){
+    command = command.toLowerCase();
+    //to 
+    if(command == "reset"){
+        reset();
+        return;
+    }
+    if(command =="show best"){
+        window.setTimeout(VCshowHint, 250);
+        return;
+    }
+    if(command =="make best"){
+        //makeVoiceMove('w');
+        voiceVsComp('w')
+        return;
+    }
+    
+    if(command.indexOf("Undo")>-1){
+        undo();
+        return;
+    }
+
+    if(command.indexOf("redo")>-1){
+        redo();
+        return;
+    }
+    if(command.indexOf(seperatorMove)>-1){
+        //move
+        var move = command.split(seperatorMove);
+        if(move.length >= 2){
+          var source = move[0].trim();//.split(seperatorPosition);
+          var target = move[1].trim();//.split(seperatorPosition);
+        }
+        onvoiceDrop(source,target)
+        console.log("from "+source + " to " +target);
+  
+        
+      }
+      else{
+        //selection
+        var selection = command //.split(seperatorPosition);
+        console.log("selection "+selection);
+        onMouseoverSquare(selection);
+  
+      }
+}
+
 var seperatorMove= 'to';
 $('#setCommando').on('click', function () {
 
@@ -677,27 +743,8 @@ $('#setCommando').on('click', function () {
     command = prompt('Geben Sie die position oder einen zug an: b2 oder b4 to b4');
     command = command.toLowerCase().trim();
     console.log(command);
-    if(command.indexOf(seperatorMove)>-1){
-      //move
-      var move = command.split(seperatorMove);
-      if(move.length >= 2){
-        var source = move[0].trim();//.split(seperatorPosition);
-        var target = move[1].trim();//.split(seperatorPosition);
-      }
-      onvoiceDrop(source,target)
-      console.log("from "+source + " to " +target);
-
-      
-    }
-    else{
-      //selection
-      var selection = command //.split(seperatorPosition);
-      console.log("selection "+selection);
-      onMouseoverSquare(selection);
-
-  
-    }
-    setMTTQmsg(selection);
+    evalCommand(command);
+   // setMTTQmsg(selection);
   
   })
   function onvoiceDrop(source,target){
@@ -750,51 +797,48 @@ $('#setCommando').on('click', function () {
             makeBestMove(color);
             if (color === 'w') {color = 'b'}
             else {color = 'w'}
-            makeVoiceMove(color);   
+            makeBestMove(color);   
         }, 250);
     }
 } 
 
-  function makeVoiceMove(color) {
-    if (color === 'b')
-    {
-        var move = getBestMove(game, color, globalSum)[0];
-    }
-    else
-    {
-        var move = getBestMove(game, color, -globalSum)[0];
-    }
 
-    globalSum = evaluateBoard(move, globalSum, 'b');
-    updateAdvantage();
+   //mqtt
+function connect() {
 
-    game.move(move);
-    board.position(game.fen());
+    console.log("connect to broker")
 
-    if (color === 'b')
-    {
-        checkStatus('black');
+    var client = mqtt.connect("wss://test.mosquitto.org:8081");
 
-        // Highlight black move
-        $board.find('.' + squareClass).removeClass('highlight-black')
-        $board.find('.square-' + move.from).addClass('highlight-black')
-        squareToHighlight = move.to
-        colorToHighlight = 'black'
+    client.on("connect", () => {
+        console.log("Connected to MQTT broker.");
 
-        $board.find('.square-' + squareToHighlight)
-        .addClass('highlight-' + colorToHighlight)
-    }
-    else
-    {
-        checkStatus('white');
+        client.subscribe(mttqTopic);
 
-        // Highlight white move
-        $board.find('.' + squareClass).removeClass('highlight-white')
-        $board.find('.square-' + move.from).addClass('highlight-white')
-        squareToHighlight = move.to
-        colorToHighlight = 'white'
+        client.on("message", (topic, message) => {
+            console.log("message received!");
+            // Log message
+            console.log(topic);
+            appendToLog(message.toString(),"White");
+            console.log(message.toString());
+            evalCommand(message.toString());
+        });
 
-        $board.find('.square-' + squareToHighlight)
-        .addClass('highlight-' + colorToHighlight)
-    }
+    });
+    client.on('error', function(err) {
+        console.log("connection lost")
+        console.log(err);
+    });
 }
+function appendToLog(logmsg,player){
+    if(!player){
+        player = "White"
+    }
+    $('#logcontainer').append( $( "<div class='logitem "+player+"'> "+player+": "+logmsg +"</div>" ));
+    $('#logcontainer').animate({
+        scrollTop: $('#logcontainer').get(0).scrollHeight
+    }, 2000);
+
+}
+
+connect();
