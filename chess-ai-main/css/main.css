@@ -5,7 +5,7 @@
 #myBoard {
     max-width: 100%;
     height: auto;
-    overflow: scroll;
+    
 }
 
 .highlight-white {
@@ -35,7 +35,7 @@
 }
 footer #setCommando{
     bottom: 0;
-    position: absolute;
+    position: relative;
     width: 100%;
     height: 50px;
 }
@@ -45,5 +45,5 @@ footer #setCommando{
     padding-top: 20px;
     padding-bottom: 20px;
     border: 1px solid black;
-}
+
 }

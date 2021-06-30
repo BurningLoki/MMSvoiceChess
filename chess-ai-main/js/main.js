@@ -3,8 +3,24 @@
  * Uses the chessboard.js and chess.js libraries.
  * 
  * Copyright (c) 2020 Zhang Zeyu
+ * changed by Bernhard Cermak for educational purposes
  */
-//var mqtt = require('mqtt')
+var option = 2;
+if(option==0){
+    var mqttConnectString = "wss://test.mosquitto.org";
+    var mqttPort = "8081";
+}
+else if(option==1){
+    var mqttConnectString = "wss://broker.mqttdashboard.com";
+    var mqttPort = "8081";
+}
+else if(option==2){
+    var mqttConnectString = "ws://broker.mqttdashboard.com";
+    var mqttPort = "8000/mqtt";
+}
+
+var client = mqtt.connect(mqttConnectString+":"+mqttPort);
+var client2 = mqtt.connect(mqttConnectString+":"+mqttPort);
 var mttqTopic = "VoiceChess"
 
 var STACK_SIZE = 100;                 // maximum size of undo stack
@@ -385,6 +401,9 @@ function makeBestMove(color) {
     var p = color == 'b' ? "Black":"White";
     var movement = move.from +" to " + move.to;
     appendToLog(movement,p);
+    if(color ==='b'){
+        opponentTurnMsg(movement);
+    }
     globalSum = evaluateBoard(move, globalSum, 'b');
     updateAdvantage();
     
@@ -509,6 +528,9 @@ function undo()
 
 $('#undoBtn').on('click', function() {
 
+    doUndo();
+})
+function doUndo(){
     if (game.history().length >= 2)
     {
         $board.find('.' + squareClass).removeClass('highlight-white');
@@ -526,16 +548,14 @@ $('#undoBtn').on('click', function() {
     {
         alert("Nothing to undo.");
     }  
-})
-
+}
 function redo()
 {
     game.move(undo_stack.pop());
     board.position(game.fen());
 }
 
-$('#redoBtn').on('click', function() {
-
+function doredo(){
     if (undo_stack.length >= 2)
     {
         // Redo twice: Player's last move, followed by opponent's last move
@@ -549,6 +569,11 @@ $('#redoBtn').on('click', function() {
     {
         alert("Nothing to redo.");
     }
+}
+
+$('#redoBtn').on('click', function() {
+    doredo();
+   
 })
 
 $('#showHint').click(function() {
@@ -625,8 +650,12 @@ function onDrop (source, target) {
     })
 
     // Illegal move
-    if (move === null) return 'snapback'
+    if (move === null){
+        appendToLog('illigal move',"System","red");
+        return 'snapback'
+    } 
     
+    appendToLog((move.from +" to "+move.to),"White")
     globalSum = evaluateBoard(move, globalSum, 'b');
     updateAdvantage();
 
@@ -680,13 +709,7 @@ function onSnapEnd () {
 }
 /// own
 
-function getMTTQmsg(){
 
-}
-function setMTTQmsg(msg){
-   // var mqtt = require('mqtt')
-    var client = mqtt.connect('wxs://test.mosquitto.org')
-}
 
 function evalCommand(command){
     command = command.toLowerCase();
@@ -701,17 +724,19 @@ function evalCommand(command){
     }
     if(command =="make best"){
         //makeVoiceMove('w');
-        voiceVsComp('w')
+        window.setTimeout(VCshowHint, 150);
+        window.setTimeout(voiceVsComp('w'), 250);
+        
         return;
     }
     
-    if(command.indexOf("Undo")>-1){
-        undo();
+    if(command.indexOf("undo")>-1){
+        doUndo();
         return;
     }
 
     if(command.indexOf("redo")>-1){
-        redo();
+        doredo();
         return;
     }
     if(command.indexOf(seperatorMove)>-1){
@@ -752,7 +777,7 @@ $('#setCommando').on('click', function () {
     removeGreySquares();
     
     // see if the move is legal
-    window.setTimeout(function() {
+    //window.setTimeout(function() {
     var move = game.move({
         from: source,
         to: target,
@@ -760,7 +785,10 @@ $('#setCommando').on('click', function () {
     })
 
     // Illegal move
-    if (move === null) return 'snapback'
+    if (move === null){
+        appendToLog('illigal move',"System","red");
+        return 'snapback'
+    } 
     
     
     globalSum = evaluateBoard(move, globalSum, 'b');
@@ -775,16 +803,18 @@ $('#setCommando').on('click', function () {
 
     $board.find('.square-' + squareToHighlight)
         .addClass('highlight-' + colorToHighlight)
-    }, 0)
+    //}, 0)
+    if(move && move !==null){
     if (!checkStatus('black'));
-    {
-        // Make the best move for black
-        window.setTimeout(function() {
-            makeBestMove('b');
+        {
+            // Make the best move for black
             window.setTimeout(function() {
-                showHint();
-            }, 250);
-        }, 750)
+                makeBestMove('b');
+                window.setTimeout(function() {
+                    showHint();
+                }, 250);
+            }, 750)
+        }
     } 
 
 }
@@ -802,18 +832,28 @@ $('#setCommando').on('click', function () {
     }
 } 
 
-
+function opponentTurnMsg(turn){
+    var oppTopic = mttqTopic+"/b";
+    client2.publish(oppTopic, turn,{ qos: 0, retain: true });
+    client2.subscribe(oppTopic);
+    client2.on("message", (topic, message) => {
+        console.log("opponent message received!");
+        console.log(message.toString());
+    });
+    
+}
    //mqtt
 function connect() {
 
     console.log("connect to broker")
 
-    var client = mqtt.connect("wss://test.mosquitto.org:8081");
+    //var client = mqtt.connect("wss://test.mosquitto.org:8081");
+    
 
     client.on("connect", () => {
         console.log("Connected to MQTT broker.");
-
-        client.subscribe(mttqTopic);
+        var myTopic = mttqTopic+"/w";
+        client.subscribe(myTopic);
 
         client.on("message", (topic, message) => {
             console.log("message received!");
@@ -830,15 +870,21 @@ function connect() {
         console.log(err);
     });
 }
-function appendToLog(logmsg,player){
+function appendToLog(logmsg,player,color='black'){
     if(!player){
         player = "White"
     }
-    $('#logcontainer').append( $( "<div class='logitem "+player+"'> "+player+": "+logmsg +"</div>" ));
-    $('#logcontainer').animate({
-        scrollTop: $('#logcontainer').get(0).scrollHeight
-    }, 2000);
-
+    $('#logcontainer').append( $( "<div style='color:"+color+"'class='logitem "+player+"'> "+player+": "+logmsg +"</div>" ));
+    if($('#logcontainer').children().length >10){
+        $('#logcontainer').animate({
+            scrollTop: $('#logcontainer').get(0).scrollHeight
+        }, 2000);
+    }
+}
+function dmc(mCommand){
+    //debug manual command
+    //simulate publish via mqtt lense & alexa 
+    client.publish(mttqTopic, mCommand);
 }
 
 connect();
